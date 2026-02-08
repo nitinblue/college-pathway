@@ -1,0 +1,7 @@
+streamlit
+fastapi
+sqlalchemy
+uvicorn
+openai-whisper
+networkx
+matplotlib

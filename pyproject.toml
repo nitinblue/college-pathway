@@ -1,0 +1,16 @@
+[project]
+name = "neuroconnections"
+version = "0.1.0"
+dependencies = [
+    "streamlit",
+    "fastapi",
+    "sqlalchemy",
+    "uvicorn"
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
