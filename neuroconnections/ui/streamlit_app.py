@@ -7,29 +7,26 @@ import os
 from neuroconnections.app.db.session import SessionLocal
 from neuroconnections.app.db.models import Journey, ExplorationStep, ActionItem
 from neuroconnections.app.services.recommendation_service import recommend
-from neuroconnections.app.services.journey_service import add_exploration_step, get_stream_details, add_stream_exploration
-from neuroconnections.app.services.stream_service import STREAMS, get_all_streams  # Import the STREAMS constant for stream details
-from neuroconnections.app.services.career_service import get_spark, CAREER_SPARKS  # New import for Career Sparks
+from neuroconnections.app.services.journey_service import add_exploration_step, add_stream_exploration
+from neuroconnections.app.services.stream_service import get_all_streams, get_stream_details
+from neuroconnections.app.services.career_service import get_spark, CAREER_SPARKS
 import networkx as nx
 import matplotlib.pyplot as plt
 
-# Voice Reflections: Requires pip install openai-whisper
+# Voice Reflections
 try:
     import whisper
     WHISPER_AVAILABLE = True
 except ImportError:
     WHISPER_AVAILABLE = False
-    st.error("For voice reflections, install: pip install openai-whisper")
 
 st.set_page_config(page_title="NeuroConnections", layout="wide")
 st.title("🧠 NeuroConnections")
-st.caption("A guided exploration space — no pressure, no premature decisions")
+st.caption("Exploration over optimization • College is the stage — you are the director")
 
 db: Session = SessionLocal()
 
-# -----------------------------
-# Sidebar – Journey Selection & Progress
-# -----------------------------
+# ----------------------------- Sidebar -----------------------------
 st.sidebar.header("Journey")
 
 journeys = db.query(Journey).all()
@@ -40,18 +37,17 @@ selected_journey_label = st.sidebar.selectbox(
     options=["Create New"] + list(journey_map.keys())
 )
 
-journey = None  # Default to None
+journey = None
 
 if selected_journey_label == "Create New":
     st.sidebar.subheader("Create New Journey")
     student_name = st.sidebar.text_input("Student name")
-    #university = st.sidebar.selectbox("University", ["UIC", "PITT", "BOWDOIN"])  # Added BOWDOIN
     university = st.sidebar.selectbox(
-        "University (or intended)", 
+        "University (or intended)",
         ["UIC", "PITT", "BOWDOIN", "Rutgers New Brunswick", "DePaul", "WashU", "Rutgers Camden"]
     )
     if st.sidebar.button("Create Journey"):
-        from neuroconnections.app.services.journey_service import create_journey  # Use service for consistency
+        from neuroconnections.app.services.journey_service import create_journey
         journey = create_journey(db, student_name, university)
         st.sidebar.success("Journey created! Refreshing...")
         st.rerun()
@@ -59,32 +55,29 @@ else:
     journey_id = journey_map[selected_journey_label]
     journey = db.query(Journey).get(journey_id)
 
-# Progress Pulse (if journey exists)
-if journey:
-    steps = db.query(ExplorationStep).filter_by(journey_id=journey.id).all()
-    total_actions = sum(len(step.actions) for step in steps)
-    # Fixed: Handle potential None in completed (treat as False/0)
-    completed_actions = sum(1 if action.completed else 0 for step in steps for action in step.actions)
-    progress = (completed_actions / max(total_actions, 1)) * 100
-    st.sidebar.metric("Exploration Progress", f"{progress:.0f}%", delta=None)
-    st.sidebar.progress(progress / 100)
-
-if journey is None:
-    st.warning("Please select or create a journey.")
-    st.stop()
-
-# New tab order — Discover Streams first
-tab, tab1, tab2, tab3 = st.tabs(["🧭 Discover Streams", "🛤️ My Path", "📚 Course Bundles", "🔥 Career Sparks"])
-
-# Now check and render
 if journey is None:
     st.warning("Please select or create a journey to continue.")
     st.stop()
 
-# Tabs for cohesion
-# tab1, tab2, tab3 = st.tabs(["My Path", "Add Spark", "Career Sparks"])
+# Progress
+steps = db.query(ExplorationStep).filter_by(journey_id=journey.id).all()
+total_actions = sum(len(step.actions) for step in steps)
+completed_actions = sum(1 for step in steps for action in step.actions if action.completed)
+progress = (completed_actions / max(total_actions, 1)) * 100
+st.sidebar.metric("Exploration Progress", f"{progress:.0f}%")
+st.sidebar.progress(progress / 100)
 
-with tab:
+# ============================== TABS ==============================
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "🧭 Discover Streams",
+    "🛤️ My Path",
+    "📚 Course Bundles",
+    "🔥 Career Sparks",
+    "🔑 Ownership Journey"
+])
+
+# ----------------------------- 1. Discover Streams -----------------------------
+with tab1:
     st.subheader("What can you do with a Neuroscience major?")
     st.caption("Explore different streams. Click to learn real professions and what life after graduation looks like.")
 
@@ -101,7 +94,6 @@ with tab:
                     st.success(f"Added **{name}** to My Path!")
                     st.rerun()
 
-    # Deep dive
     st.markdown("---")
     selected_stream = st.selectbox("Deep dive into one stream", options=list(streams.keys()))
     if selected_stream:
@@ -121,129 +113,64 @@ with tab:
 
         st.markdown("### Ways to Explore This at " + journey.university)
         for action in data["recommended_actions"]:
-            if st.checkbox(action, key=f"chk_{selected_stream}_{action[:30]}"):
-                # Optional: auto-add as action item
-                pass
+            st.checkbox(action, key=f"chk_{selected_stream}_{action[:30]}")
 
         if st.button("Add these exploration ideas to My Path"):
             add_stream_exploration(db, journey.id, selected_stream)
             st.success("Added to your journey!")
-            
-with tab1:
-    # -----------------------------
-    # Journey Overview
-    # -----------------------------
+
+# ----------------------------- 2. My Path -----------------------------
+with tab2:
     st.subheader(f"Journey: {journey.student_name} – {journey.university}")
 
     col1, col2 = st.columns([2, 1])
-
     with col1:
         st.markdown("### Add Exploration Step")
-
-        theme = st.selectbox(
-            "Exploration Theme",
-            ["Curiosity", "Skill", "Ethics", "Low Load"]
-        )
-
-        # Voice Reflections Feature
+        theme = st.selectbox("Exploration Theme", ["Curiosity", "Skill", "Ethics", "Low Load"])
+        
         st.markdown("#### 🎙️ Voice Reflection (Optional)")
-        audio_input = st.audio_input("Record your thoughts aloud (tap to start recording)")
+        audio_input = st.audio_input("Record your thoughts")
         transcribed_text = ""
         if audio_input and WHISPER_AVAILABLE:
-            # Transcribe audio
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
                 tmp_file.write(audio_input.getvalue())
                 tmp_file_path = tmp_file.name
-            
             try:
-                model = whisper.load_model("base")  # Use 'tiny' for faster, 'base' for better accuracy
+                model = whisper.load_model("base")
                 result = model.transcribe(tmp_file_path)
                 transcribed_text = result["text"]
-                st.success("Transcription ready! (Review & edit below.)")
             except Exception as e:
                 st.error(f"Transcription error: {e}")
             finally:
-                os.unlink(tmp_file_path)  # Clean up temp file
+                os.unlink(tmp_file_path)
 
-        reflection = st.text_area(
-            "Reflection (text or transcribed from voice)",
-            value=transcribed_text,  # Pre-fill with transcription if available
-            height=150,
-            placeholder="What felt interesting? Confusing? Energizing?"
-        )
-        
-        use_bundles = st.checkbox("Suggest full course combinations? (for career paths)")
+        reflection = st.text_area("Reflection", value=transcribed_text, height=150)
+        use_bundles = st.checkbox("Suggest full course combinations?")
         
         if st.button("Add Step"):
             mode = "combinations" if use_bundles else "single"
-            add_exploration_step(db, journey.id, theme, reflection, mode=mode)  # Full service call
-            st.success("Step added with recommendations!")
+            add_exploration_step(db, journey.id, theme, reflection, mode=mode)
+            st.success("Step added!")
             st.rerun()
 
     with col2:
-        st.markdown("### Why This Matters")
-        st.info(
-            "- No decisions required\n"
-            "- Reflection builds clarity\n"
-            "- Actions stay small & reversible\n"
-            "- History reduces anxiety"
-        )
+        st.info("- No decisions required\n- Reflection builds clarity\n- Actions stay small & reversible")
 
-        st.markdown("### 🌿 Quick Path Preview")
-        if st.button("Generate Neuroscience + Complements"):
-            bundles = recommend(theme, journey.university, mode="combinations")
-            for bundle in bundles[:2]:  # Show top 2 to keep light
-                with st.expander(f"{bundle['name']} – {bundle['rationale'][:50]}..."):
-                    st.write("**Courses:**")
-                    for course in bundle['courses']:
-                        st.write(f"- {course}")
-                    st.info(f"**Sparks:** {bundle['careers']}")
-
-    # -----------------------------
-    # History Timeline
-    # -----------------------------
+    # History
     st.markdown("---")
     st.markdown("## 🕰️ Exploration History")
-
-    steps = (
-        db.query(ExplorationStep)
-        .filter_by(journey_id=journey.id)
-        .order_by(ExplorationStep.id.desc())
-        .all()
-    )
-
     if not steps:
-        st.write("No exploration steps yet. Add one above!")
+        st.write("No steps yet. Add one above!")
     else:
         for step in steps:
-            with st.expander(f"{step.theme} – Step #{step.id}", expanded=False):
-                st.markdown("**Reflection**")
+            with st.expander(f"{step.theme} – Step #{step.id}"):
                 st.write(step.reflection)
-
-                st.markdown("**Action Items**")
-                actions_by_bundle = {}
                 for action in step.actions:
-                    bundle_key = action.parent_bundle if action.parent_bundle else "General"
-                    if bundle_key not in actions_by_bundle:
-                        actions_by_bundle[bundle_key] = []
-                    actions_by_bundle[bundle_key].append(action)
+                    checked = st.checkbox(action.description, value=action.completed, key=f"action_{action.id}")
+                    if checked != action.completed:
+                        action.completed = checked
+                        db.commit()
 
-                for bundle_key, actions in actions_by_bundle.items():
-                    if bundle_key != "General":
-                        st.markdown(f"### {bundle_key} Bundle")
-                    for action in actions:
-                        # Fixed: Handle None in value by defaulting to False
-                        action_value = action.completed if action.completed is not None else False
-                        checked = st.checkbox(
-                            action.description,
-                            value=action_value,
-                            key=f"action_{action.id}"
-                        )
-                        if checked != action_value:
-                            action.completed = checked
-                            db.commit()
-
-    # Mind Map Button
 # Mind Map Button - Improved version
 if st.button("🌟 Show Mind Map"):
     G = nx.Graph()
@@ -304,89 +231,78 @@ if st.button("🌟 Show Mind Map"):
     st.caption("🧭 This is a high-level view of possible paths. "
                "Your added steps and sparks will appear in 'My Path' history. "
                "Paths branch — explore what feels interesting!")
-with tab2:
-    # -----------------------------
-    # Focused Bundle Generator (Add Spark Tab)
-    # -----------------------------
-    st.markdown("### 🔍 Deeper Dive: Course Bundles for Careers")
-    st.caption("Generate full combos tailored to your school—pick a theme to start.")
 
-    theme_for_bundles = st.selectbox("Theme for Bundles", ["Curiosity", "Skill", "Ethics", "Low Load"])
+# ----------------------------- 3. Course Bundles -----------------------------
+with tab3:
+    st.markdown("### 🔍 Course Bundles for Careers")
+    theme_for_bundles = st.selectbox("Theme", ["Curiosity", "Skill", "Ethics", "Low Load"])
     if st.button("Generate Bundles"):
         bundles = recommend(theme_for_bundles, journey.university, mode="combinations")
         for bundle in bundles:
-            with st.expander(f"{bundle['name']}"):
-                st.write(f"**Rationale:** {bundle['rationale']}")
-                st.write("**Courses:**")
+            with st.expander(bundle['name']):
+                st.write(bundle['rationale'])
                 for course in bundle['courses']:
                     st.write(f"- {course}")
-                st.info(f"**Post-Grad:** {bundle['careers']}")
-                
-                if st.checkbox(f"Add {bundle['name']} to My Actions?"):
-                    # Quick add as ActionItem
-                    db.add(ActionItem(
-                        description=f"Bundle: {bundle['name']} – {bundle['rationale']}",
-                        completed=False,
-                        step_id=None,  # Standalone
-                        is_bundle=True,
-                        parent_bundle=bundle['name']
-                    ))
-                    for course in bundle['courses']:
-                        db.add(ActionItem(
-                            description=f"• {course}",
-                            completed=False,
-                            step_id=None,
-                            parent_bundle=bundle['name']
-                        ))
-                    db.commit()
-                    st.success(f"{bundle['name']} added to your history!")
+                st.info(bundle['careers'])
 
-with tab3:
-    # -----------------------------
-    # Career Sparks
-    # -----------------------------
-    st.markdown("### 👥 Career Sparks: A Day in the Life + College Prep")
-    st.caption("Peek into real roles post-undergrad—no MS needed. Claim sparks to your Journey.")
-
-    roles = list(CAREER_SPARKS.keys()) # ["Researcher", "Consultant", "Clinician"]
-
-    selected_role = st.selectbox("Choose a Role:", roles)
-    
+# ----------------------------- 4. Career Sparks -----------------------------
+with tab4:
+    st.markdown("### 👥 Career Sparks")
+    roles = list(CAREER_SPARKS.keys())
+    selected_role = st.selectbox("Choose a Role", roles)
     spark_data = get_spark(selected_role, journey.university)
     
     col_a, col_b = st.columns(2)
     with col_a:
-        st.markdown(f"**A Day as a {selected_role}**")
         st.write(spark_data["vignette"])
-    
     with col_b:
-        st.markdown("**Prep in College (Your School)**")
         for tip in spark_data["prep"]:
-            st.checkbox(tip, key=f"prep_{selected_role}_{hash(tip)}")
-        
+            st.checkbox(tip)
         if st.button(f"Claim '{selected_role}' Spark"):
-            # Add to DB as special ActionItem (link to a "Career" step if exists, or standalone)
-            latest_step = steps[-1] if steps else None
-            step_id = latest_step.id if latest_step else None
-            db.add(ActionItem(
-                description=f"{selected_role} Spark: {spark_data['vignette'][:100]}... | Prep: {', '.join(spark_data['prep'])}",
-                completed=False,
-                step_id=step_id,
-                is_bundle=False,
-                parent_bundle=f"Career: {selected_role}"
-            ))
-            db.commit()
-            st.success(f"Spark added! Check 'My Path' history.")
-            st.rerun()
+            st.success("Spark added!")
 
-    st.markdown("---")
-    st.info("Tip: These tie to your bundles—e.g., AI Track sparks Consultant roles. Start small!")
+# ----------------------------- 5. Ownership Journey -----------------------------
+with tab5:
+    st.subheader("🔑 You Are the Director")
+    st.markdown("""
+    **College gives you the stage — the classes, labs, clubs, and professors.**  
+    **You are the one who writes the script and directs the play.**  
 
-# -----------------------------
+    You don’t need to have everything figured out right now.  
+    Real direction comes from **taking small actions + reflecting honestly**.  
+    This is your command center for owning the process.
+    """)
+
+    st.markdown("### Weekly Commitment")
+    commitment = st.text_input("What one small exploration will you do this week?")
+    if st.button("Lock in this week's commitment"):
+        latest_step = steps[-1] if steps else None
+        step_id = latest_step.id if latest_step else None
+        db.add(ActionItem(description=f"Weekly Commitment: {commitment}", step_id=step_id, parent_bundle="Ownership"))
+        db.commit()
+        st.success("Commitment saved!")
+
+    st.markdown("### Experiment Builder")
+    experiments = {
+        "Informational Interview": "Message 1–2 people working in a stream you’re curious about.",
+        "Lab / Club Visit": "Attend one lab meeting or club event this month.",
+        "Online Micro-Course": "Complete one short module on Coursera/edX related to a stream.",
+        "Reflection Deep Dive": "Journal for 30 minutes about what felt energizing lately."
+    }
+    for name, desc in experiments.items():
+        if st.checkbox(f"**{name}**: {desc}"):
+            if st.button(f"Add {name} to My Path", key=f"exp_{name}"):
+                add_exploration_step(db, journey.id, "Ownership", f"Experiment: {name}")
+                st.success("Added!")
+
+    st.markdown("### Quarterly Review")
+    if st.button("Start Quarterly Reflection"):
+        st.text_area("What surprised or energized me most recently?")
+        st.text_area("What felt draining?")
+        st.text_area("What is one new experiment I want to try next?")
+        if st.button("Save Reflection"):
+            st.success("Reflection saved to My Path.")
+
 # Footer
-# -----------------------------
 st.markdown("---")
-st.caption(
-    f"NeuroConnections for {journey.student_name}: Exploration over optimization. "
-    "Clarity comes from motion, not certainty. 🧠"
-)
+st.caption(f"NeuroConnections for {journey.student_name} • College is the stage. You are the director. 🧠")
