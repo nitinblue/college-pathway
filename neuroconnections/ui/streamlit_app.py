@@ -7,8 +7,9 @@ import os
 from neuroconnections.app.db.session import SessionLocal
 from neuroconnections.app.db.models import Journey, ExplorationStep, ActionItem
 from neuroconnections.app.services.recommendation_service import recommend
-from neuroconnections.app.services.journey_service import add_exploration_step
-from neuroconnections.app.services.career_service import get_spark  # New import for Career Sparks
+from neuroconnections.app.services.journey_service import add_exploration_step, get_stream_details, add_stream_exploration
+from neuroconnections.app.services.stream_service import STREAMS, get_all_streams  # Import the STREAMS constant for stream details
+from neuroconnections.app.services.career_service import get_spark, CAREER_SPARKS  # New import for Career Sparks
 import networkx as nx
 import matplotlib.pyplot as plt
 
@@ -65,14 +66,66 @@ if journey:
     st.sidebar.metric("Exploration Progress", f"{progress:.0f}%", delta=None)
     st.sidebar.progress(progress / 100)
 
+if journey is None:
+    st.warning("Please select or create a journey.")
+    st.stop()
+
+# New tab order — Discover Streams first
+tab, tab1, tab2, tab3 = st.tabs(["🧭 Discover Streams", "🛤️ My Path", "📚 Course Bundles", "🔥 Career Sparks"])
+
 # Now check and render
 if journey is None:
     st.warning("Please select or create a journey to continue.")
     st.stop()
 
 # Tabs for cohesion
-tab1, tab2, tab3 = st.tabs(["My Path", "Add Spark", "Career Sparks"])
+# tab1, tab2, tab3 = st.tabs(["My Path", "Add Spark", "Career Sparks"])
 
+with tab:
+    st.subheader("What can you do with a Neuroscience major?")
+    st.caption("Explore different streams. Click to learn real professions and what life after graduation looks like.")
+
+    streams = get_all_streams()
+    cols = st.columns(3)
+
+    for i, (name, data) in enumerate(streams.items()):
+        with cols[i % 3]:
+            with st.container(border=True):
+                st.markdown(f"### {data['icon']} {name}")
+                st.write(data['description'][:120] + "...")
+                if st.button("Explore this stream →", key=f"btn_{name}"):
+                    add_stream_exploration(db, journey.id, name)
+                    st.success(f"Added **{name}** to My Path!")
+                    st.rerun()
+
+    # Deep dive
+    st.markdown("---")
+    selected_stream = st.selectbox("Deep dive into one stream", options=list(streams.keys()))
+    if selected_stream:
+        data = get_stream_details(selected_stream, journey.university)
+        st.markdown(f"## {data['icon']} {selected_stream}")
+        st.write(data["description"])
+
+        st.markdown("### What to Expect After Graduation")
+        st.info(data["post_grad"])
+
+        st.markdown("### Real Professions & A Day in the Life")
+        for prof in data["professions"]:
+            with st.expander(prof["title"]):
+                st.write(prof.get("vignette", "Vignette coming soon..."))
+                if "salary" in prof:
+                    st.caption(f"Starting salary range: {prof['salary']}")
+
+        st.markdown("### Ways to Explore This at " + journey.university)
+        for action in data["recommended_actions"]:
+            if st.checkbox(action, key=f"chk_{selected_stream}_{action[:30]}"):
+                # Optional: auto-add as action item
+                pass
+
+        if st.button("Add these exploration ideas to My Path"):
+            add_stream_exploration(db, journey.id, selected_stream)
+            st.success("Added to your journey!")
+            
 with tab1:
     # -----------------------------
     # Journey Overview
@@ -246,7 +299,8 @@ with tab3:
     st.markdown("### 👥 Career Sparks: A Day in the Life + College Prep")
     st.caption("Peek into real roles post-undergrad—no MS needed. Claim sparks to your Journey.")
 
-    roles = ["Researcher", "Consultant", "Clinician"]
+    roles = list(CAREER_SPARKS.keys()) # ["Researcher", "Consultant", "Clinician"]
+
     selected_role = st.selectbox("Choose a Role:", roles)
     
     spark_data = get_spark(selected_role, journey.university)

@@ -6,6 +6,7 @@ from neuroconnections.app.db.models import (
     ActionItem,
 )
 from neuroconnections.app.services.recommendation_service import recommend
+from neuroconnections.app.services.stream_service import get_stream_details
 
 
 def create_journey(
@@ -76,6 +77,35 @@ def add_exploration_step(
     db.refresh(step)
     return step
 
+def add_stream_exploration(db: Session, journey_id: int, stream_name: str) -> ExplorationStep:
+    journey = db.query(Journey).get(journey_id)
+    step = ExplorationStep(
+        theme=stream_name,  # This makes it clear in history
+        reflection="Initial curiosity about this stream.",
+        journey_id=journey_id,
+    )
+    db.add(step)
+    db.flush()
+
+    # Pull recommended actions from stream_service
+    details = get_stream_details(stream_name, journey.university)
+    
+    for act in details.get("recommended_actions", []):
+        db.add(ActionItem(
+            description=act,
+            step_id=step.id,
+            parent_bundle=stream_name
+        ))
+
+    # Bonus reflection prompt
+    db.add(ActionItem(
+        description="Reflect: Which parts of this stream feel energizing or interesting?",
+        step_id=step.id
+    ))
+
+    db.commit()
+    db.refresh(step)
+    return step
 
 def get_journey_steps(
     db: Session,
