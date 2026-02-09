@@ -45,8 +45,11 @@ journey = None  # Default to None
 if selected_journey_label == "Create New":
     st.sidebar.subheader("Create New Journey")
     student_name = st.sidebar.text_input("Student name")
-    university = st.sidebar.selectbox("University", ["UIC", "PITT", "BOWDOIN"])  # Added BOWDOIN
-
+    #university = st.sidebar.selectbox("University", ["UIC", "PITT", "BOWDOIN"])  # Added BOWDOIN
+    university = st.sidebar.selectbox(
+        "University (or intended)", 
+        ["UIC", "PITT", "BOWDOIN", "Rutgers New Brunswick", "DePaul", "WashU", "Rutgers Camden"]
+    )
     if st.sidebar.button("Create Journey"):
         from neuroconnections.app.services.journey_service import create_journey  # Use service for consistency
         journey = create_journey(db, student_name, university)
@@ -241,20 +244,66 @@ with tab1:
                             db.commit()
 
     # Mind Map Button
-    if st.button("🌟 Show Mind Map"):
-        G = nx.Graph()
-        G.add_edges_from([
-            ("Neuroscience Core", "AI/Tech Track"),
-            ("AI/Tech Track", "Careers: Data Scientist @ Neuralink"),
-            ("Clinical Track", "Med School Path"),
-            ("Ethics Track", "Policy Advisor"),
-            # Personalize: Add from steps if wanted
-        ])
-        fig, ax = plt.subplots(figsize=(10, 6))
-        nx.draw(G, with_labels=True, node_color="lightblue", node_size=2000, font_size=10, ax=ax)
-        st.pyplot(fig)
-        st.caption("Your paths are branching—click to explore in real life!")
-
+# Mind Map Button - Improved version
+if st.button("🌟 Show Mind Map"):
+    G = nx.Graph()
+    
+    # More meaningful nodes based on the streams we have in the app
+    G.add_edges_from([
+        ("Neuroscience Major", "Academic Research"),
+        ("Neuroscience Major", "Clinical & Healthcare"),
+        ("Neuroscience Major", "Neurotechnology & BCI"),
+        ("Neuroscience Major", "Biotech & Pharma"),
+        ("Neuroscience Major", "Computational & Data Science"),
+        ("Neuroscience Major", "Policy, Ethics & Communication"),
+        
+        ("Academic Research", "Lab Technician / Research Assistant"),
+        ("Academic Research", "PhD → Professor"),
+        
+        ("Clinical & Healthcare", "Clinical Research Coordinator"),
+        ("Clinical & Healthcare", "Therapist / Clinician"),
+        
+        ("Neurotechnology & BCI", "Neurotech Specialist"),
+        ("Neurotechnology & BCI", "BCI Engineer"),
+        
+        ("Biotech & Pharma", "Research Associate"),
+        ("Biotech & Pharma", "Regulatory Affairs"),
+        
+        ("Computational & Data Science", "Neuroscience Data Analyst"),
+        
+        ("Policy, Ethics & Communication", "Science Policy Advisor"),
+        ("Policy, Ethics & Communication", "Science Writer"),
+    ])
+    
+    # Better layout and styling
+    pos = nx.spring_layout(G, seed=42)  # Consistent layout
+    fig, ax = plt.subplots(figsize=(11, 7))  # Much bigger and better proportions
+    
+    nx.draw(
+        G, 
+        pos,
+        with_labels=True,
+        node_color="lightblue",
+        node_size=2800,
+        font_size=9,
+        font_weight="bold",
+        edge_color="gray",
+        width=1.5,
+        alpha=0.9,
+        ax=ax
+    )
+    
+    # Optional: highlight the central node
+    nx.draw_networkx_nodes(G, pos, nodelist=["Neuroscience Major"], 
+                           node_color="lightcoral", node_size=3200, ax=ax)
+    
+    plt.title("Your Neuroscience Exploration Map", fontsize=14, pad=20)
+    plt.tight_layout()
+    st.pyplot(fig)
+    
+    st.caption("🧭 This is a high-level view of possible paths. "
+               "Your added steps and sparks will appear in 'My Path' history. "
+               "Paths branch — explore what feels interesting!")
 with tab2:
     # -----------------------------
     # Focused Bundle Generator (Add Spark Tab)
